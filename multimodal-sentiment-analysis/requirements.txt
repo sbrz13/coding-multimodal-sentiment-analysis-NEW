@@ -1,0 +1,29 @@
+# 基础依赖
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.5.1
+torch==2.3.1
+torchvision==0.18.1
+
+# 文本处理依赖
+transformers==4.41.2
+nltk==3.8.1
+
+# 图像处理依赖
+Pillow==10.3.0
+opencv-python==4.10.0.84
+
+# 数据加载和处理
+datasets==2.19.2
+
+# 评估和可视化
+matplotlib==3.9.1
+seaborn==0.13.2
+
+# 工具类
+argparse==1.4.0
+tqdm==4.66.4
+
+# 可选依赖（用于特定模型）
+# 用于 ConvNeXt 模型
+# 用于 Vision Transformer 模型
