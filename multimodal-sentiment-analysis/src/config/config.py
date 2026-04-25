@@ -1,76 +1,101 @@
 import json
 import os
+import torch
+
 
 class Config:
     def __init__(self, config_file=None):
-        # 默认配置
         self.data_config = {
-            "dataset_name": "mvsa",  # 数据集名称：mvsa, twitter
-            "data_dir": "data/",  # 数据存储目录
-            "batch_size": 32,  # 批次大小
-            "image_size": 224,  # 图像大小
-            "max_seq_length": 128,  # 文本最大长度
-            "train_val_split": 0.8  # 训练验证集分割比例
+            "dataset_name": "merged",
+            "data_dir": os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data"),
+            "batch_size": 32,
+            "image_size": 224,
+            "max_seq_length": 128,
+            "num_workers": 4,
+            "use_merged_data": True,
+            "augment": True,
+            "use_weighted_sampling": True,
+            "use_mixup": True,
         }
-        
+
         self.model_config = {
-            "text_model": "bert-base-uncased",  # 文本模型：bert-base-uncased, roberta-base, electra-base-discriminator
-            "vision_model": "vit-base-patch16-224",  # 视觉模型：inception_v3, convnext-base, vit-base-patch16-224
-            "fusion_strategy": "feature_level",  # 融合策略：feature_level, decision_level
-            "num_classes": 3,  # 情感类别数：3（积极、消极、中性）
-            "dropout_rate": 0.5  # Dropout率
+            "text_model": "roberta-base",
+            "vision_model": "google/vit-base-patch16-224",
+            "text_hidden_size": 768,
+            "vision_hidden_size": 768,
+            "projection_dim": 512,
+            "attention_dim": 512,
+            "num_attention_heads": 8,
+            "cross_attn_layers": 4,
+            "num_classes": 3,
+            "dropout_rate": 0.3,
+            "text_dropout_rate": 0.2,
+            "image_dropout_rate": 0.5,
+            "drop_path_rate": 0.15,
+            "image_noise_scale": 0.15,
+            "image_noise_prob": 0.5,
+            "freeze_encoders": False,
+            "contrastive_temperature": 0.07,
+            "contrastive_weight": 0.2,
         }
-        
+
         self.train_config = {
-            "learning_rate": 2e-5,  # 学习率
-            "num_epochs": 10,  # 训练轮数
-            "warmup_steps": 500,  # 预热步数
-            "weight_decay": 0.01,  # 权重衰减
-            "device": "cuda" if os.environ.get("CUDA_VISIBLE_DEVICES") else "cpu"  # 设备
+            "learning_rate": 5e-6,
+            "encoder_learning_rate": 2e-6,
+            "image_encoder_learning_rate": 1e-6,
+            "fusion_learning_rate": 5e-5,
+            "classifier_learning_rate": 1e-4,
+            "weight_decay": 1e-4,
+            "image_weight_decay": 5e-4,
+            "num_epochs": 30,
+            "warmup_ratio": 0.1,
+            "device": "cuda" if torch.cuda.is_available() else "cpu",
+            "seed": 42,
+            "early_stop_patience": 8,
+            "label_smoothing": 0.1,
+            "gradient_accumulation_steps": 2,
         }
-        
+
+        self.meta_config = {
+            "meta_learner_C": 100,
+            "meta_learner_multi_class": "ovr",
+            "meta_learner_max_iter": 1000,
+        }
+
         self.eval_config = {
-            "metrics": ["accuracy", "f1", "precision", "recall"],  # 评估指标
-            "save_results": True,  # 是否保存评估结果
-            "results_dir": "results/"  # 结果保存目录
+            "metrics": ["accuracy", "f1", "precision", "recall"],
+            "save_results": True,
+            "results_dir": "results/",
         }
-        
-        # 如果提供了配置文件，加载配置
+
         if config_file and os.path.exists(config_file):
             self.load_config(config_file)
-    
+
     def load_config(self, config_file):
-        """从JSON文件加载配置"""
-        with open(config_file, 'r', encoding='utf-8') as f:
+        with open(config_file, "r", encoding="utf-8") as f:
             config = json.load(f)
-        
-        # 更新配置
         if "data_config" in config:
             self.data_config.update(config["data_config"])
         if "model_config" in config:
             self.model_config.update(config["model_config"])
         if "train_config" in config:
             self.train_config.update(config["train_config"])
+        if "meta_config" in config:
+            self.meta_config.update(config["meta_config"])
         if "eval_config" in config:
             self.eval_config.update(config["eval_config"])
-    
+
     def save_config(self, config_file):
-        """保存配置到JSON文件"""
-        config = {
-            "data_config": self.data_config,
-            "model_config": self.model_config,
-            "train_config": self.train_config,
-            "eval_config": self.eval_config
-        }
-        
-        with open(config_file, 'w', encoding='utf-8') as f:
+        config = self.to_dict()
+        os.makedirs(os.path.dirname(config_file) if os.path.dirname(config_file) else ".", exist_ok=True)
+        with open(config_file, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
-    
-    def get_config(self):
-        """获取完整配置"""
+
+    def to_dict(self):
         return {
             "data_config": self.data_config,
             "model_config": self.model_config,
             "train_config": self.train_config,
-            "eval_config": self.eval_config
+            "meta_config": self.meta_config,
+            "eval_config": self.eval_config,
         }

@@ -1,0 +1,41 @@
+{
+    "data_config": {
+        "batch_size": 32,
+        "num_workers": 4,
+        "use_merged_data": true,
+        "augment": true,
+        "use_weighted_sampling": true,
+        "use_mixup": true
+    },
+    "train_config": {
+        "learning_rate": 5e-6,
+        "encoder_learning_rate": 2e-6,
+        "image_encoder_learning_rate": 1e-6,
+        "fusion_learning_rate": 5e-5,
+        "classifier_learning_rate": 1e-4,
+        "num_epochs": 30,
+        "early_stop_patience": 8,
+        "label_smoothing": 0.1,
+        "weight_decay": 1e-4,
+        "image_weight_decay": 5e-4,
+        "warmup_ratio": 0.1,
+        "device": "cuda",
+        "seed": 42,
+        "gradient_accumulation_steps": 2
+    },
+    "model_config": {
+        "projection_dim": 512,
+        "attention_dim": 512,
+        "num_attention_heads": 8,
+        "cross_attn_layers": 4,
+        "dropout_rate": 0.3,
+        "text_dropout_rate": 0.2,
+        "image_dropout_rate": 0.5,
+        "drop_path_rate": 0.15,
+        "image_noise_scale": 0.15,
+        "image_noise_prob": 0.5,
+        "freeze_encoders": false,
+        "contrastive_temperature": 0.07,
+        "contrastive_weight": 0.2
+    }
+}

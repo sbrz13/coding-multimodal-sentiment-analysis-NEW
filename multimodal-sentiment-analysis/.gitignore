@@ -1,0 +1,42 @@
+# 数据文件夹（用户自行上传）
+data/
+!data/.gitkeep
+!data/images/.gitkeep
+
+# 训练结果和模型保存
+results/
+saved_models/
+checkpoints/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+venv/
+env/
+.env/
+.venv/
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+
+# 临时文件
+*.tmp
+.temp/
