@@ -3,7 +3,7 @@ import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModel
+from transformers import AutoModel, CLIPVisionModel, CLIPVisionConfig
 
 
 class DropPath(nn.Module):
@@ -73,8 +73,16 @@ class TextEncoder(nn.Module):
 class ImageEncoder(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.vit = AutoModel.from_pretrained(config.model_config["vision_model"])
-        hidden_size = self.vit.config.hidden_size
+        vision_model_name = config.model_config["vision_model"]
+        self.use_clip = "clip" in vision_model_name.lower()
+
+        if self.use_clip:
+            self.vit = CLIPVisionModel.from_pretrained(vision_model_name)
+            hidden_size = self.vit.config.hidden_size
+        else:
+            self.vit = AutoModel.from_pretrained(vision_model_name)
+            hidden_size = self.vit.config.hidden_size
+
         proj_dim = config.model_config["projection_dim"]
         image_dropout = config.model_config.get("image_dropout_rate", config.model_config["dropout_rate"])
         self.feature_noise = FeatureNoiseInjection(
@@ -235,6 +243,43 @@ class MultiHeadCrossAttention(nn.Module):
         z = self.out_proj(context)
         z = self.layer_norm(z)
         return z
+
+
+class ModalityReliabilityGate(nn.Module):
+    def __init__(self, text_dim, image_dim, hidden_dim=256):
+        super().__init__()
+        self.text_reliability = nn.Sequential(
+            nn.Linear(text_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1),
+        )
+        self.image_reliability = nn.Sequential(
+            nn.Linear(image_dim, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, 1),
+        )
+        self.joint_gate = nn.Sequential(
+            nn.Linear(text_dim + image_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, 1),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, text_feat, image_feat):
+        text_score = self.text_reliability(text_feat)
+        image_score = self.image_reliability(image_feat)
+        scores = torch.cat([text_score, image_score], dim=-1)
+        weights = torch.softmax(scores, dim=-1)
+        text_weight = weights[:, 0:1]
+        image_weight = weights[:, 1:2]
+        joint_gate = self.joint_gate(torch.cat([text_feat, image_feat], dim=-1))
+        image_weight = image_weight * joint_gate
+        text_weight = text_weight * (1 - joint_gate) + text_weight * joint_gate
+        total = text_weight + image_weight + 1e-8
+        text_weight = text_weight / total
+        image_weight = image_weight / total
+        return text_weight, image_weight
 
 
 class SequenceLevelAttention(nn.Module):
@@ -412,11 +457,23 @@ class CrossAttentionModel(nn.Module):
         )
         self.contrastive_weight = config.model_config.get("contrastive_weight", 0.3)
 
+        proj_dim = config.model_config["projection_dim"]
+        self.use_reliability_gate = config.model_config.get("use_reliability_gate", True)
+        if self.use_reliability_gate:
+            self.reliability_gate = ModalityReliabilityGate(
+                text_dim=proj_dim, image_dim=proj_dim, hidden_dim=proj_dim // 2
+            )
+
     def forward(self, input_ids, attention_mask, pixel_values):
         text_feat, text_seq, text_mask = self.text_encoder(input_ids, attention_mask)
         image_feat, image_seq = self.image_encoder(pixel_values)
         z_head = self.multihead_fusion(text_feat, image_feat)
         z_seq = self.seq_fusion(text_seq, text_mask, image_seq)
+
+        if self.use_reliability_gate:
+            text_weight, image_weight = self.reliability_gate(text_feat, image_feat)
+            z_head = text_weight * z_head + image_weight * z_head
+
         logits = self.classifier(z_head, z_seq)
         return logits, text_feat, image_feat, z_head
 

@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
-from transformers import AutoTokenizer, AutoImageProcessor
+from transformers import AutoTokenizer, AutoImageProcessor, CLIPImageProcessor
 from collections import Counter
 
 
@@ -245,7 +245,11 @@ def get_data_loaders(config):
     use_mixup = config.data_config.get("use_mixup", False)
 
     tokenizer = AutoTokenizer.from_pretrained(config.model_config["text_model"])
-    image_processor = AutoImageProcessor.from_pretrained(config.model_config["vision_model"])
+    vision_model_name = config.model_config["vision_model"]
+    if "clip" in vision_model_name.lower():
+        image_processor = CLIPImageProcessor.from_pretrained(vision_model_name)
+    else:
+        image_processor = AutoImageProcessor.from_pretrained(vision_model_name)
 
     use_merged = config.data_config.get("use_merged_data", True)
 

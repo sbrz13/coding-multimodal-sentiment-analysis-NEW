@@ -20,7 +20,7 @@ class Config:
 
         self.model_config = {
             "text_model": "roberta-base",
-            "vision_model": "google/vit-base-patch16-224",
+            "vision_model": "openai/clip-vit-base-patch32",
             "text_hidden_size": 768,
             "vision_hidden_size": 768,
             "projection_dim": 512,
@@ -37,6 +37,7 @@ class Config:
             "freeze_encoders": False,
             "contrastive_temperature": 0.07,
             "contrastive_weight": 0.2,
+            "use_reliability_gate": True,
         }
 
         self.train_config = {
