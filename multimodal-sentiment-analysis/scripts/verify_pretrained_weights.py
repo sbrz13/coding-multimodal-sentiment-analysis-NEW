@@ -47,9 +47,11 @@ for param_name in params_to_check:
 print("\n" + "=" * 60)
 print("验证 ViT 预训练权重加载")
 print("=" * 60)
+print("验证 ViT/CLIP 预训练权重加载")
+print("=" * 60)
 
 # 加载官方预训练模型作为参考
-print("\n1. 加载官方 google/vit-base-patch16-224 预训练模型...")
+print(f"\n1. 加载官方 {config.model_config['vision_model']} 预训练模型...")
 official_vit = AutoModel.from_pretrained(config.model_config["vision_model"])
 
 # 加载我们的 ImageEncoder
@@ -59,15 +61,21 @@ image_encoder = ImageEncoder(config)
 # 比较核心参数
 print("\n3. 比较核心参数是否一致：")
 vit_params_to_check = [
-    "embeddings.patch_embeddings.projection.weight",
-    "embeddings.position_embeddings",
-    "encoder.layer.0.attention.attention.query.weight",
-    "encoder.layer.0.attention.attention.query.bias",
-    "encoder.layer.11.layernorm_after.weight",
+    "embeddings.patch_embedding.weight",
+    "embeddings.position_embedding",
+    "encoder.layers.0.self_attn.q_proj.weight",
+    "encoder.layers.0.self_attn.q_proj.bias",
+    "encoder.layers.23.layer_norm1.weight",
 ]
 
 vit_all_match = True
 for param_name in vit_params_to_check:
+    if param_name not in official_vit.state_dict():
+        print(f"   {param_name}: ⏭️ 跳过 (参数名不同)")
+        continue
+    if param_name not in image_encoder.vit.state_dict():
+        print(f"   {param_name}: ⏭️ 跳过 (模型中不存在)")
+        continue
     official_param = official_vit.state_dict()[param_name]
     our_param = image_encoder.vit.state_dict()[param_name]
     

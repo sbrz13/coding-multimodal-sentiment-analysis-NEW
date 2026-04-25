@@ -46,12 +46,98 @@ This project implements a **multimodal sentiment analysis framework** supporting
 
 ---
 
-## 📂 Project Structure
+## � Quick Start: Step-by-Step Setup Guide
+
+### Step 1: Clone the Repository
+```bash
+git clone <repository-url>
+cd multimodal-sentiment-analysis
+```
+
+### Step 2: Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### Step 3: Prepare Datasets
+
+#### Option A: Use MVSA-Single Only
+1. Download MVSA-Single from [THU-BPM/MTML](https://github.com/THU-BPM/MTML)
+2. Place the data in `data/MVSA_Single/`
+3. Run the split script:
+   ```bash
+   python scripts/split_dataset.py
+   ```
+
+#### Option B: Use All Three Datasets (Recommended)
+1. Download all three datasets (see [Supported Datasets](#-supported-datasets) section for links)
+2. Place MVSA-Single in `data/MVSA_Single/`
+3. Place Twitter2015/2017 in `data/data/IJCAI2019_data/`
+4. Run the merge script:
+   ```bash
+   python scripts/merge_datasets.py
+   ```
+
+### Step 4: Verify Setup
+```bash
+python scripts/verify_pretrained_weights.py
+```
+
+### Step 5: Start Training
+```bash
+bash train_gpu.sh
+```
+
+### Step 6: View Results
+```bash
+python scripts/analysis.py
+```
+Generated figures will be saved to `results/analysis/`.
+
+---
+
+## 📦 Required Packages and Dependencies
+
+### Core Dependencies
+| Package | Version | Purpose |
+|---------|---------|---------|
+| numpy | >=1.24.0 | Numerical operations |
+| pandas | >=2.0.0 | Data manipulation |
+| scikit-learn | >=1.3.0 | Machine learning utilities |
+| torch | >=2.0.0 | Deep learning framework |
+| torchvision | >=0.15.0 | Computer vision utilities |
+| transformers | >=4.30.0 | Pre-trained model library |
+| nltk | >=3.8.0 | Natural language processing |
+| Pillow | >=10.0.0 | Image processing |
+| opencv-python | >=4.8.0 | Computer vision |
+| datasets | >=2.14.0 | Dataset management |
+| matplotlib | >=3.7.0 | Visualization |
+| seaborn | >=0.12.0 | Statistical visualization |
+| tqdm | >=4.65.0 | Progress bars |
+| joblib | >=1.3.0 | Model serialization |
+| scipy | >=1.10.0 | Scientific computing |
+
+### System Requirements
+- **Python**: 3.8+
+- **CUDA**: 12.4+ (for GPU training)
+- **GPU**: NVIDIA GPU with 12GB+ VRAM (V5 Large Models)
+- **RAM**: 32GB+ recommended
+- **Storage**: 10GB+ (for model cache and data)
+
+### Install All Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## �📂 Project Structure
 
 ```
 multimodal-sentiment-analysis/
 ├── data/                           # Data directory
 │   ├── data/                       # Processed data
+│   │   └── IJCAI2019_data/         # Twitter2015/2017 raw data
 │   └── MVSA_Single/                # MVSA-Single raw data
 ├── src/                            # Source code
 │   ├── config/                     # Configuration module
@@ -59,7 +145,7 @@ multimodal-sentiment-analysis/
 │   │   └── config.py              # Configuration management
 │   ├── data_processing/            # Data processing module
 │   │   ├── __init__.py
-│   │   ├── data_loader.py         # Data loader
+│   │   ├── data_loader.py         # Dataset and DataLoader
 │   │   └── preprocessor.py        # Data preprocessing
 │   ├── evaluation/                 # Evaluation module
 │   │   ├── __init__.py
@@ -68,11 +154,11 @@ multimodal-sentiment-analysis/
 │       ├── __init__.py
 │       └── models.py              # Model definitions
 ├── scripts/                        # Scripts directory
-│   ├── merge_datasets.py          # Dataset merging script
+│   ├── merge_datasets.py          # Merge 3 datasets into unified format
 │   ├── preprocess_data.py         # Data preprocessing
 │   ├── run_evaluation.py          # Model evaluation
-│   ├── run_training.py            # Model training
-│   ├── split_dataset.py           # Dataset splitting
+│   ├── run_training.py            # Two-stage training pipeline
+│   ├── split_dataset.py           # Stratified train/val/test split
 │   ├── analysis.py                # Results visualization
 │   └── verify_pretrained_weights.py # Weight verification
 ├── results/                        # Results directory
@@ -90,71 +176,91 @@ multimodal-sentiment-analysis/
 └── README.md                       # Project documentation
 ```
 
----
+### Module Descriptions
 
-## 🔧 Installation
-
-### Method 1: Using requirements.txt
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd multimodal-sentiment-analysis
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Method 2: Using setup.py
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd multimodal-sentiment-analysis
-
-# Install in development mode
-pip install -e .
-```
-
-### Requirements
-- Python 3.8+
-- PyTorch 2.0+ (CUDA 12.4+ recommended)
-- Transformers 4.30+
-- scikit-learn
-- matplotlib, seaborn, scipy (for visualization)
+| Module | File | Functionality |
+|--------|------|---------------|
+| **config** | `config.py` | Central configuration management, loads JSON configs |
+| **data_processing** | `data_loader.py` | Dataset class, DataLoader, image augmentation, MixUp collator |
+| **data_processing** | `preprocessor.py` | Text tokenization, image preprocessing |
+| **evaluation** | `metrics.py` | Accuracy, F1, Precision, Recall, classification reports |
+| **training** | `models.py` | CrossAttentionModel, TextOnlyModel, ImageOnlyModel, Meta-Learner |
+| **scripts** | `run_training.py` | Two-stage training: base models + meta-learner ensemble |
+| **scripts** | `merge_datasets.py` | Merges MVSA-Single + Twitter2015 + Twitter2017 |
+| **scripts** | `split_dataset.py` | Stratified 6:2:2 train/val/test split |
+| **scripts** | `analysis.py` | Generates performance comparison figures |
 
 ---
 
-## 📊 Data Preparation
+## � Supported Datasets
 
-### Step 1: Download Datasets
+| Dataset | Samples | Classes | Description | Download Link |
+|---------|---------|---------|-------------|---------------|
+| **MVSA-Single** | ~2,000 | 3 (Neg/Neu/Pos) | High-quality image-text pairs from social media | [THU-BPM/MTML](https://github.com/THU-BPM/MTML) |
+| **Twitter2015** | ~2,500 | 3 | Twitter posts with images, real-world noise | [IJCAI2019 Data](https://github.com/sivagurunathan/Twitter-Sentiment-Analysis) |
+| **Twitter2017** | ~3,000 | 3 | Twitter posts with images, real-world noise | [IJCAI2019 Data](https://github.com/sivagurunathan/Twitter-Sentiment-Analysis) |
 
-Supported datasets:
-- **MVSA-Single**: [Download Link](https://github.com/THU-BPM/MTML)
-- **Twitter2015**: Twitter multimodal sentiment analysis dataset
-- **Twitter2017**: Twitter multimodal sentiment analysis dataset
+### Dataset Format
 
-### Step 2: Merge Datasets (Optional)
-
-To train with multiple datasets:
-
-```bash
-python scripts/merge_datasets.py \
-    --mvsa_single <mvsa_single_path> \
-    --twitter2015 <twitter2015_path> \
-    --twitter2017 <twitter2017_path> \
-    --output_dir data/
+#### MVSA-Single (JSON format)
+```json
+{
+  "id": "sample_id",
+  "text": "Sample text content",
+  "image_path": "/path/to/image.jpg",
+  "label": "positive"
+}
 ```
 
-### Step 3: Split Train/Val/Test Sets
-
-```bash
-python scripts/split_dataset.py \
-    --data_dir data/ \
-    --train_ratio 0.6 \
-    --val_ratio 0.2 \
-    --test_ratio 0.2
+#### Twitter2015/2017 (TSV format)
 ```
+id	label	image_id	text_masked	target
+1	0	img001.jpg	I love $T$!	apple
+```
+
+### Data Processing Pipeline
+
+This project uses a **multi-step data processing pipeline** to prepare datasets for training:
+
+#### Step 1: MVSA-Single Stratified Split
+The `split_dataset.py` script performs a **stratified 6:2:2 split** on MVSA-Single:
+1. Reads `labelResultAll.txt` to get text and image labels
+2. Fuses labels (text label takes priority when text and image labels differ)
+3. Groups samples by label and shuffles within each group
+4. Splits into train (60%), val (20%), test (20%) maintaining class distribution
+5. Saves as `train.json`, `val.json`, `test.json`
+
+#### Step 2: Multi-Dataset Merge
+The `merge_datasets.py` script combines all three datasets:
+1. **MVSA-Single**: Parses JSON format, filters by image existence
+2. **Twitter2015/2017**: Parses TSV format, replaces `$T$` placeholder with target entity
+3. **Merges** train and val sets from all three datasets
+4. **Keeps test sets separate** for per-dataset evaluation
+5. Saves as `merged_train.json`, `merged_val.json`, `test_mvsa_single.json`, `test_twitter2015.json`, `test_twitter2017.json`, `merged_test.json`
+
+#### Output JSON Format
+All processed data follows a unified format:
+```json
+[
+  {
+    "id": "dataset_sample_id",
+    "text": "Processed text content",
+    "image_path": "/absolute/path/to/image.jpg",
+    "label": "positive",
+    "dataset": "mvsa_single"
+  }
+]
+```
+
+### Dataset Statistics (After Merging)
+| Split | Samples |
+|-------|---------|
+| Merged Train | ~5,500 |
+| Merged Val | ~1,800 |
+| MVSA-Single Test | ~400 |
+| Twitter2015 Test | ~500 |
+| Twitter2017 Test | ~600 |
+| **Total** | **~8,800** |
 
 ---
 
@@ -343,18 +449,6 @@ The project implements multi-level anti-overfitting strategies:
 - ✅ **Gradient Accumulation**: More stable training
 - ✅ **Early Stopping**: Prevent overfitting
 - ✅ **Cosine Learning Rate Schedule**: Dynamic learning rate adjustment
-
----
-
-## 📚 Supported Datasets
-
-| Dataset | Samples | Classes | Description |
-|---------|---------|---------|-------------|
-| **MVSA-Single** | ~2000 | 3 (Neg/Neu/Pos) | High-quality image-text pairs, clear sentiment expression |
-| **Twitter2015** | ~2500 | 3 | Real social media data, contains noise |
-| **Twitter2017** | ~3000 | 3 | Real social media data, contains noise |
-
-**Training Strategy**: Merge three datasets for training, but keep test sets separate for evaluation
 
 ---
 
