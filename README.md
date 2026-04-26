@@ -14,38 +14,6 @@ This project implements a **multimodal sentiment analysis framework** supporting
 
 ---
 
-## 🆕 V5 Large Model Upgrade
-
-### Model Upgrades
-| Component | V4 (Base) | V5 (Large) | Improvement |
-|-----------|-----------|------------|-------------|
-| **Text Encoder** | RoBERTa-base (125M) | **RoBERTa-large (355M)** | +184% parameters |
-| hidden_size | 768 | **1024** | +33% |
-| num_layers | 12 | **24** | +100% |
-| **Image Encoder** | CLIP-ViT-Base-patch32 (86M) | **CLIP-ViT-Large-patch14 (307M)** | +257% parameters |
-| num_layers | 12 | **24** | +100% |
-| patch_size | 32 | **14** | Finer granularity |
-| visual_tokens | 50 | **257** | +414% |
-
-### Architecture Adjustments
-| Parameter | V4 | V5 |
-|-----------|-----|-----|
-| projection_dim | 512 | **768** |
-| attention_dim | 512 | **768** |
-| num_attention_heads | 8 | **12** |
-| cross_attn_layers | 4 | **6** |
-
-### V5 Training Strategy (Optimized for Large Models)
-- **Learning Rate**: Lower to preserve pre-trained weights
-  - encoder_lr: 8e-7 (text)
-  - image_encoder_lr: 4e-7 (image)
-- **Gradient Accumulation**: 4 steps (effective batch_size = 32)
-- **Warmup**: 20% (large models need longer warmup)
-- **Training Epochs**: 50
-- **Early Stop Patience**: 12 epochs
-
----
-
 ## 🚀 Quick Start: Step-by-Step Setup Guide
 
 ### Step 1: Clone the Repository
@@ -62,7 +30,7 @@ pip install -r requirements.txt
 ### Step 3: Prepare Datasets
 
 #### Option A: Use MVSA-Single Only
-1. Download MVSA-Single from [THU-BPM/MTML](https://github.com/THU-BPM/MTML)
+1. Download MVSA-Single from [MCR-lab](https://mcrlab.net/research/mvsa-sentiment-analysis-on-multi-view-social-data/)
 2. Place the data in `data/MVSA_Single/`
 3. Run the split script:
    ```bash
@@ -196,9 +164,9 @@ multimodal-sentiment-analysis/
 
 | Dataset | Samples | Classes | Description | Download Link |
 |---------|---------|---------|-------------|---------------|
-| **MVSA-Single** | ~2,000 | 3 (Neg/Neu/Pos) | High-quality image-text pairs from social media | [THU-BPM/MTML](https://github.com/THU-BPM/MTML) |
-| **Twitter2015** | ~2,500 | 3 | Twitter posts with images, real-world noise | [IJCAI2019 Data](https://github.com/sivagurunathan/Twitter-Sentiment-Analysis) |
-| **Twitter2017** | ~3,000 | 3 | Twitter posts with images, real-world noise | [IJCAI2019 Data](https://github.com/sivagurunathan/Twitter-Sentiment-Analysis) |
+| **MVSA-Single** | ~2,000 | 3 (Neg/Neu/Pos) | High-quality image-text pairs from social media | [MCR-lab](https://mcrlab.net/research/mvsa-sentiment-analysis-on-multi-view-social-data/) |
+| **Twitter2015** | ~2,500 | 3 | Twitter posts with images, real-world noise | [IJCAI2019 Data](https://ieee-dataport.org/documents/twitterdata) |
+| **Twitter2017** | ~3,000 | 3 | Twitter posts with images, real-world noise | [IJCAI2019 Data](https://ieee-dataport.org/documents/twitterdata) |
 
 ### Dataset Format
 
@@ -295,7 +263,7 @@ The project uses a **two-stage training strategy**:
 
 ### Training Configuration
 
-#### config_gpu.json Key Parameters (V5 Large Models)
+#### config_gpu.json Key Parameters
 
 ```json
 {
@@ -429,6 +397,72 @@ Generated figures (saved to `results/analysis/`):
 
 ---
 
+## 🔬 Technical Principles
+
+### Cross-Attention Mechanism
+
+The core of this project is the **bidirectional cross-attention mechanism** that enables deep fusion between text and image modalities:
+
+#### How It Works
+1. **Text→Image Attention**: Text tokens query image patches, extracting visual information relevant to each word
+2. **Image→Text Attention**: Image patches query text tokens, extracting textual context relevant to each visual region
+3. **Multi-Head Processing**: 12 attention heads capture different types of cross-modal relationships simultaneously
+4. **Sequence-Level Attention**: After cross-attention, a sequence-level attention mechanism weights the importance of each token/patch
+
+#### Why Cross-Attention > Simple Concatenation
+- **Dynamic Alignment**: Learns which text tokens correspond to which image regions
+- **Context-Aware Fusion**: Text features are enhanced with relevant visual context, and vice versa
+- **Fine-Grained Interaction**: Operates at token/patch level rather than global feature level
+
+### Modality Reliability Gate
+
+A learnable gating mechanism that dynamically adjusts the contribution of each modality:
+
+```
+gate_weight = sigmoid(MLP(text_features, image_features))
+fused_features = gate_weight * text_features + (1 - gate_weight) * image_features
+```
+
+**Benefits**:
+- Automatically downweights noisy or irrelevant images
+- Handles cases where one modality is more informative than the other
+- Prevents the model from being misled by poor-quality inputs
+
+### Contrastive Learning
+
+Adds a contrastive loss term to encourage cross-modal alignment:
+
+- **Positive Pairs**: Text and image from the same sample should have similar representations
+- **Negative Pairs**: Text and image from different samples should have dissimilar representations
+- **Temperature Parameter**: Controls the sharpness of the similarity distribution
+
+This helps the model learn a shared semantic space where related text-image pairs are close together.
+
+### Two-Stage Training Strategy
+
+**Stage 1: Base Model Training**
+- Each model (Cross-Attention, Text-Only, Image-Only) is trained independently
+- Allows each model to specialize in its modality
+- Uses different hyperparameters optimized for each architecture
+
+**Stage 2: Meta-Learner Training**
+- A logistic regression model is trained on validation set predictions
+- Learns optimal weights for combining predictions from base models
+- Provides robust ensemble performance
+
+### Anti-Overfitting Design
+
+| Strategy | Purpose | Implementation |
+|----------|---------|----------------|
+| **DropPath** | Stochastic depth | Randomly drops attention blocks during training |
+| **Feature Noise** | Robustness | Adds Gaussian noise to features |
+| **MixUp** | Data augmentation | Interpolates samples and labels |
+| **Label Smoothing** | Regularization | Softens target labels |
+| **Weighted Sampling** | Class balance | Oversamples minority classes |
+| **Hierarchical LR** | Preservation | Lower LR for pre-trained encoders |
+
+---
+
 ## 🎯 Anti-Overfitting Strategies
 
 The project implements multi-level anti-overfitting strategies:
@@ -486,44 +520,20 @@ Automatically enable AMP (Automatic Mixed Precision) for faster training:
 ## ⚠️ Important Notes
 
 ### Hardware Requirements
-- **GPU**: NVIDIA GPU 12GB+ VRAM (V5 Large Models)
+- **GPU**: NVIDIA GPU 12GB+ VRAM
 - **CPU**: Can be used but training is slower
 - **RAM**: 32GB+ recommended
 - **Storage**: 10GB+ (model cache)
 
 ### Training Time
-- **V4 (Base Models)**: ~2-3 hours (RTX 3080 Ti)
-- **V5 (Large Models)**: ~5-8 hours (RTX 3080 Ti)
+- **Base Models**: ~2-3 hours (RTX 3080 Ti)
+- **Large Models**: ~5-8 hours (RTX 3080 Ti)
 
 ### Model Cache
 Models are cached locally after first download:
 - RoBERTa-large: ~1.4GB
 - CLIP-ViT-Large: ~1.7GB
 - **Total**: ~3.1GB
-
-### Common Issues
-
-**Q: CLIP-ViT-Large download is slow?**
-A: Model weights are ~1.7GB. Set HF_TOKEN to speed up:
-   ```bash
-   export HF_TOKEN=your_token_here
-   ```
-
-**Q: CUDA out of memory?**
-A: V5 large models require more VRAM:
-   - Reduce `batch_size` to 4
-   - Increase `gradient_accumulation_steps` to 8
-   - Or switch to V4 config (roberta-base + clip-vit-base)
-
-**Q: Training loss not decreasing?**
-- Check if data is loaded correctly
-- Increase learning rate
-- Check class balance
-
-**Q: Validation performance decreasing?**
-- Enable early stopping
-- Increase regularization strength (dropout, drop_path)
-- Reduce number of epochs
 
 ---
 
