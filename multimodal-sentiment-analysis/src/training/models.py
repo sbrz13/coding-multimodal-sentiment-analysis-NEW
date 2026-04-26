@@ -44,7 +44,12 @@ class TextEncoder(nn.Module):
         text_dropout = config.model_config.get("text_dropout_rate", config.model_config["dropout_rate"])
 
         if config.model_config["freeze_encoders"]:
-            for param in self.roberta.parameters():
+            num_layers = self.roberta.config.num_hidden_layers
+            for i, layer in enumerate(self.roberta.encoder.layer):
+                if i < num_layers - 4:
+                    for param in layer.parameters():
+                        param.requires_grad = False
+            for param in self.roberta.embeddings.parameters():
                 param.requires_grad = False
 
         self.projection = nn.Sequential(
@@ -91,7 +96,12 @@ class ImageEncoder(nn.Module):
         )
 
         if config.model_config["freeze_encoders"]:
-            for param in self.vit.parameters():
+            num_layers = self.vit.config.num_hidden_layers
+            for i, layer in enumerate(self.vit.encoder.layers):
+                if i < num_layers - 4:
+                    for param in layer.parameters():
+                        param.requires_grad = False
+            for param in self.vit.embeddings.parameters():
                 param.requires_grad = False
 
         self.projection = nn.Sequential(
@@ -467,12 +477,16 @@ class CrossAttentionModel(nn.Module):
     def forward(self, input_ids, attention_mask, pixel_values):
         text_feat, text_seq, text_mask = self.text_encoder(input_ids, attention_mask)
         image_feat, image_seq = self.image_encoder(pixel_values)
-        z_head = self.multihead_fusion(text_feat, image_feat)
-        z_seq = self.seq_fusion(text_seq, text_mask, image_seq)
 
         if self.use_reliability_gate:
             text_weight, image_weight = self.reliability_gate(text_feat, image_feat)
-            z_head = text_weight * z_head + image_weight * z_head
+            text_feat = text_weight * text_feat
+            image_feat = image_weight * image_feat
+            text_seq = text_weight.unsqueeze(-1) * text_seq
+            image_seq = image_weight.unsqueeze(-1) * image_seq
+
+        z_head = self.multihead_fusion(text_feat, image_feat)
+        z_seq = self.seq_fusion(text_seq, text_mask, image_seq)
 
         logits = self.classifier(z_head, z_seq)
         return logits, text_feat, image_feat, z_head
