@@ -150,9 +150,12 @@ multimodal-sentiment-analysis/
 │   ├── evaluation/                 # Evaluation module
 │   │   ├── __init__.py
 │   │   └── metrics.py             # Evaluation metrics
-│   └── training/                   # Training module
+│   ├── training/                   # Training module
+│   │   ├── __init__.py
+│   │   └── models.py              # Model definitions
+│   └── inference/                  # Inference module
 │       ├── __init__.py
-│       └── models.py              # Model definitions
+│       └── inference.py           # Prediction and inference utilities
 ├── scripts/                        # Scripts directory
 │   ├── merge_datasets.py          # Merge 3 datasets into unified format
 │   ├── preprocess_data.py         # Data preprocessing
@@ -185,6 +188,7 @@ multimodal-sentiment-analysis/
 | **data_processing** | `preprocessor.py` | Text tokenization, image preprocessing |
 | **evaluation** | `metrics.py` | Accuracy, F1, Precision, Recall, classification reports |
 | **training** | `models.py` | CrossAttentionModel, TextOnlyModel, ImageOnlyModel, Meta-Learner |
+| **inference** | `inference.py` | MultimodalPredictor, single/batch/ensemble prediction |
 | **scripts** | `run_training.py` | Two-stage training: base models + meta-learner ensemble |
 | **scripts** | `merge_datasets.py` | Merges MVSA-Single + Twitter2015 + Twitter2017 |
 | **scripts** | `split_dataset.py` | Stratified 6:2:2 train/val/test split |
@@ -336,6 +340,104 @@ The project uses a **two-stage training strategy**:
 
 ---
 
+## 🔮 Model Inference
+
+### Single Sample Prediction
+
+```bash
+python src/inference/inference.py \
+    --config config_gpu.json \
+    --model_dir results/models \
+    --text "I absolutely love this product!" \
+    --image path/to/image.jpg
+```
+
+### Batch Prediction from JSON
+
+```bash
+python src/inference/inference.py \
+    --config config_gpu.json \
+    --model_dir results/models \
+    --input_json data/test_samples.json \
+    --output_json results/predictions.json
+```
+
+### Python API Usage
+
+```python
+from src.inference.inference import MultimodalPredictor
+
+predictor = MultimodalPredictor("config_gpu.json", "results/models")
+
+result = predictor.predict(
+    text="Sample text content",
+    image_path="path/to/image.jpg",
+    use_ensemble=True
+)
+
+print(f"Predicted: {result['predicted_label']}")
+print(f"Confidence: {result['confidence']:.4f}")
+```
+
+### Inference Features
+
+- ✅ **Single Model Prediction**: Cross-Attention, Text-Only, or Image-Only
+- ✅ **Ensemble Prediction**: Meta-learner combines all three models
+- ✅ **Batch Processing**: Process multiple samples from JSON file
+- ✅ **Automatic Preprocessing**: Text tokenization and image processing
+- ✅ **Probability Output**: Full probability distribution for all classes
+
+### Inference API Details
+
+#### MultimodalPredictor Class
+
+```python
+class MultimodalPredictor:
+    def __init__(self, config_path, model_dir, device=None)
+    
+    def predict_single_model(text, image_path, model_name)
+        # Returns: {predicted_label, confidence, probabilities}
+    
+    def predict_ensemble(text, image_path)
+        # Returns: {predicted_label, confidence, probabilities}
+    
+    def predict(text, image_path, use_ensemble=True)
+        # Auto-selects best available model
+```
+
+#### Input JSON Format for Batch Prediction
+
+```json
+[
+    {
+        "id": "sample_001",
+        "text": "Sample text content",
+        "image_path": "/absolute/path/to/image.jpg",
+        "label": "positive"
+    }
+]
+```
+
+#### Output JSON Format
+
+```json
+[
+    {
+        "sample_id": "sample_001",
+        "predicted_label": "positive",
+        "predicted_class": 2,
+        "confidence": 0.8542,
+        "probabilities": {
+            "negative": 0.0521,
+            "neutral": 0.0937,
+            "positive": 0.8542
+        }
+    }
+]
+```
+
+---
+
 ## 📈 Model Evaluation
 
 ### Evaluate All Models
@@ -391,41 +493,170 @@ Generated figures (saved to `results/analysis/`):
 
 ### 1. Cross-Attention Model
 
-**Key Features**:
-- Multi-Head Cross-Attention mechanism (12 heads, 6 layers)
-- Sequence-Level Attention fusion
-- Bidirectional attention: Text→Image and Image→Text
-- Modality Reliability Gate (dynamic text/image weighting)
-- Contrastive learning loss (cross-modal alignment)
+**Architecture Overview**:
+The Cross-Attention Model is the core multimodal fusion architecture that enables deep interaction between text and image modalities through multiple attention mechanisms.
+
+**Key Components**:
+
+#### Text Encoder (RoBERTa-large)
+- **Base Model**: `roberta-large` (355M parameters, 24 layers, 1024 hidden size)
+- **Partial Freezing**: First 20 layers frozen, last 4 layers trainable
+- **Projection Head**: 2-layer MLP with GELU activation and LayerNorm
+  - Input: 1024 → Output: 768 (projection dimension)
+- **Sequence Projection**: Linear projection for token-level features
+
+#### Image Encoder (CLIP-ViT-Large)
+- **Base Model**: `openai/clip-vit-large-patch14` (307M parameters, 24 layers, 1024 hidden size)
+- **Partial Freezing**: First 20 layers frozen, last 4 layers trainable
+- **Feature Noise Injection**: Gaussian noise (σ=0.1, p=0.4) for robustness
+- **Projection Head**: 2-layer MLP with higher dropout (0.4) to prevent overfitting
+- **Patch Processing**: Extracts [CLS] token and 256 patch features (14×14 grid)
+
+#### Multi-Head Cross-Attention (Fusion Layer 1)
+- **Mechanism**: Text query attends to image key/value pairs
+- **Configuration**: 12 attention heads, 768-dimensional attention space
+- **Head Dimension**: 768 / 12 = 64 per head
+- **Output**: Global fused representation (z_head)
+- **Normalization**: LayerNorm + residual connection
+
+#### Sequence-Level Attention (Fusion Layer 2)
+This is a **multi-stage fusion pipeline**:
+
+1. **Self-Attention Preprocessing**:
+   - Text sequence: Self-attention with mask support
+   - Image sequence: Self-attention for patch features
+
+2. **Bidirectional Cross-Attention** (6 layers):
+   - **Text→Image Attention**: Text tokens query image patches
+   - **Image→Text Attention**: Image patches query text tokens
+   - **Gated Fusion**: Learnable gates control information flow
+   - **DropPath**: Stochastic depth with increasing rate (0→0.2)
+   - **FFN**: 4× expansion ratio with GELU activation
+
+3. **Sequence Pooling**:
+   - Text attention pooling: MLP-based scoring → softmax
+   - Image attention pooling: MLP-based scoring → softmax
+   - Gated fusion: Sigmoid gate combines text/image weighted sums
+
+4. **Output**: Sequence-level fused representation (z_seq)
+
+#### Modality Reliability Gate
+- **Text Reliability Score**: MLP(text_features) → [0, 1]
+- **Image Reliability Score**: MLP(image_features) → [0, 1]
+- **Joint Gate**: MLP(text + image) → sigmoid
+- **Weight Normalization**: Softmax ensures text_weight + image_weight = 1
+- **Application**: Applied before fusion to both global and sequence features
+
+#### Joint Classifier
+- **Input**: Concatenation of z_head (768) + z_seq (768) = 1536
+- **Architecture**: 4-layer MLP
+  - 1536 → 1536 → 768 → 384 → 3 (num_classes)
+  - GELU activation + Dropout (0.3) between layers
+
+#### Contrastive Learning
+- **Loss Function**: Symmetric InfoNCE loss
+- **Temperature**: 0.07
+- **Weight**: 0.05 (combined with cross-entropy loss)
+- **Purpose**: Encourage cross-modal alignment in shared embedding space
+
+**Total Parameters**: ~700M (355M text + 307M image + ~38M fusion/classifier)
 
 **Use Case**: Scenarios requiring full utilization of both text and image information
 
+---
+
 ### 2. Text-Only Model
 
-**Key Features**:
-- RoBERTa-large text encoder (355M parameters)
-- Three-layer classifier
-- Text dropout regularization
+**Architecture Overview**:
+A unimodal text classification model based on RoBERTa-large for pure text sentiment analysis.
 
-**Use Case**: Pure text sentiment analysis
+**Key Components**:
+
+#### Text Encoder (RoBERTa-large)
+- **Base Model**: `roberta-large` (355M parameters)
+- **Partial Freezing**: First 20 layers frozen, last 4 layers trainable
+- **Projection Head**: Same as Cross-Attention model (1024 → 768)
+
+#### Text Classifier
+- **Input**: 768-dimensional projected features
+- **Architecture**: 3-layer MLP
+  - 768 → 768 → 384 → 3 (num_classes)
+  - GELU activation + Dropout (0.15) between layers
+  - Lower dropout rate compared to image modality
+
+**Total Parameters**: ~356M (355M encoder + ~1M classifier)
+
+**Use Case**: Pure text sentiment analysis, baseline for multimodal comparison
+
+---
 
 ### 3. Image-Only Model
 
-**Key Features**:
-- CLIP-ViT-Large image encoder (307M parameters)
-- Feature noise injection
-- High dropout rate to prevent overfitting
+**Architecture Overview**:
+A unimodal image classification model based on CLIP-ViT-Large for pure image sentiment analysis.
 
-**Use Case**: Pure image sentiment analysis
+**Key Components**:
+
+#### Image Encoder (CLIP-ViT-Large)
+- **Base Model**: `openai/clip-vit-large-patch14` (307M parameters)
+- **Partial Freezing**: First 20 layers frozen, last 4 layers trainable
+- **Feature Noise Injection**: Same as Cross-Attention model
+- **Projection Head**: Same as Cross-Attention model (1024 → 768, dropout=0.4)
+
+#### Image Classifier
+- **Input**: 768-dimensional projected features
+- **Architecture**: 3-layer MLP
+  - 768 → 768 → 384 → 3 (num_classes)
+  - GELU activation + Dropout (0.4) between layers
+  - Higher dropout rate to prevent image overfitting
+
+**Total Parameters**: ~308M (307M encoder + ~1M classifier)
+
+**Use Case**: Pure image sentiment analysis, baseline for multimodal comparison
+
+---
 
 ### 4. Meta-Learner (Ensemble Model)
 
-**Key Features**:
-- Logistic Regression meta-learner
-- Ensembles prediction probabilities from three base models
-- Trained on validation set
+**Architecture Overview**:
+A decision-level fusion model that combines predictions from all three base models using logistic regression.
 
-**Use Case**: Scenarios requiring best overall performance
+**Key Components**:
+
+#### Input Features
+- Cross-Attention prediction probabilities (3 classes)
+- Text-Only prediction probabilities (3 classes)
+- Image-Only prediction probabilities (3 classes)
+- **Total Input**: 9-dimensional feature vector
+
+#### Logistic Regression Meta-Learner
+- **Model**: `sklearn.linear_model.LogisticRegression`
+- **Training Data**: Validation set predictions from base models
+- **Output**: Final ensemble prediction probabilities
+
+**Advantages**:
+- Learns optimal weighting for each base model
+- Robust to individual model failures
+- No additional training required (uses sklearn)
+
+**Use Case**: Scenarios requiring best overall performance through ensemble
+
+---
+
+### Architecture Comparison
+
+| Component | Cross-Attention | Text-Only | Image-Only |
+|-----------|----------------|-----------|------------|
+| **Encoder** | RoBERTa-large + CLIP-ViT-Large | RoBERTa-large | CLIP-ViT-Large |
+| **Encoder Params** | 662M | 355M | 307M |
+| **Fusion Mechanism** | Multi-Head + Seq-Level Attention | N/A | N/A |
+| **Reliability Gate** | ✅ Yes | ❌ No | ❌ No |
+| **Contrastive Loss** | ✅ Yes (0.05 weight) | ❌ No | ❌ No |
+| **Classifier Params** | ~38M | ~1M | ~1M |
+| **Total Params** | ~700M | ~356M | ~308M |
+| **Dropout Rate** | 0.3 (text: 0.15, image: 0.4) | 0.15 | 0.4 |
+| **Feature Noise** | ✅ Yes | ❌ No | ✅ Yes |
+| **DropPath** | ✅ Yes (0.2) | ❌ No | ❌ No |
 
 ---
 
